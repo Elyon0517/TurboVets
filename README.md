@@ -1,105 +1,188 @@
-# New Nx Repository
+# Turbo Tasks
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Task board with a NestJS API and an Angular dashboard (Nx monorepo).
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## Setup Instructions
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-## Try the full Nx platform
-🚀 If you haven't connected to Nx Cloud yet, [complete your setup here](https://cloud.nx.app/setup/connect-workspace/guide). Get faster builds with remote caching, distributed task execution, and self-healing CI. [See how your workspace can benefit](#nx-cloud).
-## Generate a library
+### Requirements
 
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+- Node.js 20+
+- npm 10+
+
+### Install
+
+```bash
+npm install
 ```
 
-## Run tasks
+### `.env` configuration
 
-To build the library use:
+The API reads `apps/api/.env`.
 
-```sh
-npx nx build pkg1
+```env
+NODE_ENV=development
+PORT=3000
+JWT_SECRET=change-me
+JWT_EXPIRES_IN=24h
+DB_PATH=turbo-tasks.sqlite
+FRONTEND_URL=http://localhost:4200
 ```
 
-To run any task with Nx use:
+### Run backend and frontend
 
-```sh
-npx nx <target> <project-name>
+```bash
+npx nx serve api
+npx nx serve dashboard
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+- API: `http://localhost:3000/api`
+- Dashboard: `http://localhost:4200`
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Demo users (seeded on first API start):
 
-## Versioning and releasing
+- owner@acme.com / Password123!
+- admin@acme.com / Password123!
+- viewer@acme.com / Password123!
 
-To version and release the library use
+## Architecture Overview
+
+### Nx monorepo layout
 
 ```
-npx nx release
+turbo-tasks/
+  apps/
+    api/            NestJS API
+    api-e2e/        API E2E tests
+    dashboard/      Angular app
+    dashboard-e2e/  Playwright E2E tests
+  libs/
+    data/           shared types (DTOs/enums/interfaces)
+    auth/           shared RBAC helpers
 ```
 
-Pass `--dry-run` to see what would happen without actually releasing the library.
+### Why the shared libs exist
 
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- `@org/data`: the “contract” between frontend and backend (DTOs + enums + interfaces).
+- `@org/auth`: role/permission helpers used by the API (and can be reused elsewhere).
 
-## Keep TypeScript project references up to date
+## Data Model Explanation
 
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
+### Schema (high level)
 
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
+- `organizations`: org tree (supports parent/children)
+- `roles`: role per organization (owner/admin/viewer)
+- `users`: belongs to an organization + role
+- `tasks`: belongs to an organization + owner, sortable with `order`
+- `audit_logs`: records actions (read/write/access denied, etc.)
 
-```sh
-npx nx sync
+### ERD (text)
+
+```
+organizations (1) ──< roles (many)
+organizations (1) ──< users (many)
+users (1) ──────────< tasks (many)
+users (0..1) ───────< audit_logs (many)
+
+organizations (parentId) ──< organizations (children)
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+## Access Control Implementation
 
-```sh
-npx nx sync:check
+### Roles, permissions, org scope
+
+- **Owner**: full access (across org tree)
+- **Admin**: manage tasks in their org, can view audit log
+- **Viewer**: can only see/edit their own tasks
+
+Organizations form a simple hierarchy via `parentId`. Task visibility is scoped from role + org.
+
+### JWT + guards
+
+- Login/registration returns a JWT containing `sub`, `email`, `role`, `organizationId`.
+- Dashboard stores the token and sends it as `Authorization: Bearer <token>`.
+- API validates the token (JWT strategy) and then checks role requirements (roles guard + shared RBAC helpers).
+
+## API Documentation
+
+All endpoints are prefixed with `/api`. Protected endpoints require `Authorization: Bearer <jwt>`.
+
+### Endpoints
+
+Auth:
+
+- `POST /auth/login`
+- `POST /auth/register`
+- `GET /auth/me` (protected)
+
+Tasks (protected):
+
+- `GET /tasks`
+- `POST /tasks`
+- `GET /tasks/:id`
+- `PUT /tasks/:id`
+- `DELETE /tasks/:id`
+- `POST /tasks/reorder`
+
+Organizations (protected):
+
+- `GET /organizations`
+- `GET /organizations/:id`
+- `POST /organizations` (owner)
+
+Users (protected, admin+):
+
+- `GET /users`
+- `GET /users/:id`
+
+Audit log (protected, admin+):
+
+- `GET /audit-log?page=1&limit=50`
+
+### Sample requests
+
+Login:
+
+```bash
+curl -sS -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@acme.com","password":"Password123!"}'
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+List tasks:
 
-## Nx Cloud
-
-Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
-
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Set up CI (non-Github Actions CI)
-
-**Note:** This is only required if your CI provider is not GitHub Actions.
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
+```bash
+curl -sS "http://localhost:3000/api/tasks" \
+  -H "Authorization: Bearer $JWT"
 ```
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Create a task:
 
-## Install Nx Console
+```bash
+curl -sS -X POST "http://localhost:3000/api/tasks" \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"My task","priority":"high","category":"work"}'
+```
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+## Future Considerations
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- **Advanced role delegation**: multiple roles per user, org-level delegation, or per-project roles.
+- **Production-ready security**
+  - JWT refresh tokens (short-lived access tokens + refresh rotation)
+  - CSRF protection if moving to cookie-based auth
+  - RBAC caching (short TTL / invalidation on role change)
+- **Scaling permission checks**: consider ABAC / policy engines when roles and rules grow beyond simple hierarchies.
 
-## Useful links
+## Tests
 
-Learn more:
+```bash
+npx nx test api
+npx nx test dashboard
+```
 
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Build
 
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+```bash
+npx nx build api
+npx nx build dashboard
+```
