@@ -186,3 +186,12 @@ npx nx test dashboard
 npx nx build api
 npx nx build dashboard
 ```
+
+## Source, copyright and attribution
+
+Original project: [Elyon0517/TurboVets](https://github.com/Elyon0517/TurboVets), maintained by
+[Elyon0517](https://github.com/Elyon0517). The project uses the [MIT License](LICENSE), consistent with its existing package metadata. File-specific and third-party licenses also apply.
+
+For articles, demos and derivatives, please credit the original project and link here.
+That link is a courtesy request, not an extra restriction on an existing open-source license.
+See [copyright and third-party boundaries](COPYRIGHT.md) and [citation metadata](CITATION.cff).
